@@ -1,0 +1,17 @@
+{
+  "name": "@wasal-t/notification",
+  "version": "0.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "lint": "eslint src",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "typescript": "^5.5.0"
+  }
+}

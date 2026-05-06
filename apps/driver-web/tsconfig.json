@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2017",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "preserve",
+    "allowJs": true,
+    "noEmit": true,
+    "lib": ["ES2022", "dom", "dom.iterable"],
+    "plugins": [{ "name": "next" }]
+  },
+  "include": ["src", "next.config.ts", ".next/types/**/*.ts"]
+}
