@@ -112,4 +112,78 @@ router.patch('/:rideId', async (req, res) => {
   }
 });
 
+router.delete('/:rideId', async (req, res) => {
+  const callerId = req.headers['x-user-id'] as string | undefined;
+  const role = req.headers['x-user-role'] as string | undefined;
+
+  if (!callerId || role !== 'rider') {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const { rideId } = req.params as { rideId: string };
+
+  try {
+    const [ride] = await db.select().from(rides).where(eq(rides.id, rideId)).limit(1);
+
+    if (!ride) {
+      res.status(404).json({ error: 'Ride not found' });
+      return;
+    }
+
+    if (ride.riderId !== callerId) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
+
+    if (ride.status === 'cancelled' || ride.status === 'completed') {
+      res.status(409).json({ error: `Ride cannot be cancelled (status: ${ride.status})` });
+      return;
+    }
+
+    await db.update(rides).set({ status: 'cancelled' }).where(eq(rides.id, rideId));
+
+    await publish(getRedis(), `ride:${rideId}:cancelled`, { rideId });
+
+    res.json({ rideId, status: 'cancelled' });
+  } catch {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/:rideId', async (req, res) => {
+  const callerId = req.headers['x-user-id'] as string | undefined;
+  const role = req.headers['x-user-role'] as string | undefined;
+
+  if (!callerId || (role !== 'rider' && role !== 'driver')) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const { rideId } = req.params as { rideId: string };
+
+  try {
+    const [ride] = await db.select().from(rides).where(eq(rides.id, rideId)).limit(1);
+
+    if (!ride) {
+      res.status(404).json({ error: 'Ride not found' });
+      return;
+    }
+
+    if (role === 'rider' && ride.riderId !== callerId) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
+
+    if (role === 'driver' && ride.driverId !== callerId) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
+
+    res.json(ride);
+  } catch {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

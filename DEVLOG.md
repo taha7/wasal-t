@@ -470,3 +470,27 @@ Single HTTP entry point for all clients. Handles authentication (register/login)
 |---|---|
 | `pnpm install` | No new packages downloaded (ioredis already in workspace) |
 | `pnpm --filter "@wasal-t/ride" type-check` | Clean — zero errors |
+
+---
+
+## Phase 5 — Tasks 4 & 5: DELETE + GET /rides/:rideId — 2026-05-07
+
+### Technologies / Decisions
+- **Cancel guard**: only blocks cancel on `cancelled` or `completed` — allows cancelling a `pending` or `matched` ride (matching loop listens for the Pub/Sub signal and exits cleanly)
+- **GET role check**: riders can only see their own ride; drivers can only see rides they are assigned to (`driver_id = callerId`); returns 403 otherwise — no information leakage about unrelated rides
+
+### Files modified
+| File | Change |
+|---|---|
+| `services/ride/src/routes/rides.ts` | Added `DELETE /:rideId` and `GET /:rideId` handlers |
+
+### Functions / features implemented
+| Symbol | File | Description |
+|---|---|---|
+| `DELETE /rides/:rideId` handler | `src/routes/rides.ts` | Validates rider ownership; rejects if already `cancelled`/`completed`; UPDATEs status to `cancelled`; publishes `ride:{rideId}:cancelled` to Redis Pub/Sub so Matching Service exits its loop |
+| `GET /rides/:rideId` handler | `src/routes/rides.ts` | Both riders and drivers may call; riders checked against `riderId`, drivers against `driverId`; returns full ride row |
+
+### Commands run
+| Command | Outcome |
+|---|---|
+| `pnpm --filter "@wasal-t/ride" type-check` | Clean — zero errors |
