@@ -337,3 +337,53 @@ Single HTTP entry point for all clients. Handles authentication (register/login)
 | `pnpm install` | +91 packages (express, http-proxy-middleware, types) |
 | `pnpm --filter "@wasal-t/gateway" type-check` | Clean — zero errors |
 | `pnpm --filter "@wasal-t/gateway" build` | Clean — `dist/` generated with all files |
+
+---
+
+## Phase 5 — Task 1: POST /fares (Ride Service bootstrap) — 2026-05-07
+
+### Technologies / Decisions
+- **Express 4** — same as gateway; consistent stack across services
+- **Haversine formula** — pure-math great-circle distance; no external geocoding dependency needed for demo fare estimation
+- **Fare model**: base $2.00 + $1.50/km, minimum $3.00, rounded to 2 decimal places; intentionally simple for demo
+- **Trust-the-network auth**: ride service reads `X-User-Id` / `X-User-Role` headers injected by the gateway — no JWT parsing in downstream services
+
+### Files created
+| File | Purpose |
+|---|---|
+| `services/ride/src/app.ts` | Express app — `GET /health`, mounts `/fares` router |
+| `services/ride/src/routes/fares.ts` | `POST /fares` handler + `haversineKm` + `calcFare` |
+| `services/ride/src/index.ts` | Entry point; listens on `PORT` (default 3001) |
+
+### Files modified
+| File | Change |
+|---|---|
+| `services/ride/package.json` | Added `express`, `@wasal-t/auth`, `@wasal-t/db` deps; added `start` script |
+
+### Packages installed (resolved versions in workspace)
+| Package | Version |
+|---|---|
+| `express` | ^4.21.0 (already resolved in workspace) |
+| `@types/express` | ^4.17.0 (already resolved) |
+| `@types/node` | ^22 (already resolved) |
+| `@wasal-t/auth` | workspace:* |
+| `@wasal-t/db` | workspace:* |
+
+### Functions / features implemented
+| Symbol | File | Description |
+|---|---|---|
+| `haversineKm(lat1, lon1, lat2, lon2)` | `src/routes/fares.ts` | Great-circle distance in km via Haversine |
+| `calcFare(distanceKm)` | `src/routes/fares.ts` | Returns `max(3, 2 + km × 1.5)` |
+| `POST /fares` handler | `src/routes/fares.ts` | Validates headers + body; inserts draft ride; returns `{ rideId, fare }` |
+
+### Config values
+| Variable | Default | Notes |
+|---|---|---|
+| `PORT` | `3001` | Ride service port |
+| `DATABASE_URL` | `postgresql://wasal:wasal@localhost:5432/wasalt` | Same DB as gateway |
+
+### Commands run
+| Command | Outcome |
+|---|---|
+| `pnpm install` | No new packages downloaded (deps already in workspace) |
+| `pnpm --filter "@wasal-t/ride" type-check` | Clean — zero errors |
