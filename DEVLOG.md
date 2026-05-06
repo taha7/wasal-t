@@ -428,3 +428,45 @@ Single HTTP entry point for all clients. Handles authentication (register/login)
 | `pnpm install` | Already up to date — no new downloads |
 | `pnpm --filter "@wasal-t/ride" type-check` | Clean — zero errors |
 | `pnpm --filter "@wasal-t/ride" build` | Clean — `dist/` updated |
+
+---
+
+## Phase 5 — Task 3: PATCH /rides/:rideId (driver accept/decline) — 2026-05-07
+
+### Technologies / Decisions
+- **Redis Pub/Sub** — two channels used: `offer-result:{rideId}:{driverId}` wakes the Matching Service's per-offer listener; `ride:{rideId}:matched` wakes the Notification Service for the rider's SSE stream
+- **Trust-the-network auth** — driver identity comes from `x-user-id` / `x-user-role` headers injected by the gateway, consistent with all other downstream services
+- **No status guard on decline** — on decline the ride status stays `pending` (matching loop continues looking for the next driver); only `accept=true` transitions the ride to `matched`
+
+### Files created
+| File | Purpose |
+|---|---|
+| `services/ride/src/redis.ts` | Redis singleton: reads `REDIS_URL` env var, exposes `getRedis()` |
+
+### Files modified
+| File | Change |
+|---|---|
+| `services/ride/src/routes/rides.ts` | Added `PATCH /:rideId` handler; imported `publish` from `@wasal-t/redis` and `getRedis` from `../redis.js` |
+| `services/ride/package.json` | Added `@wasal-t/redis: workspace:*` dependency |
+
+### Packages installed
+| Package | Version |
+|---|---|
+| `@wasal-t/redis` | `workspace:*` (ioredis already resolved in workspace) |
+
+### Functions / features implemented
+| Symbol | File | Description |
+|---|---|---|
+| `getRedis()` | `src/redis.ts` | Lazy singleton — creates ioredis client on first call, returns cached thereafter |
+| `PATCH /rides/:rideId` handler | `src/routes/rides.ts` | Validates driver role; fetches ride; checks `status='pending'`; on accept: UPDATEs status to `matched` + sets `driverId`, publishes to `offer-result:{rideId}:{driverId}` + `ride:{rideId}:matched`; on decline: publishes `offer-result:{rideId}:{driverId}` with `accepted=false`; returns updated status |
+
+### Config values
+| Variable | Default | Notes |
+|---|---|---|
+| `REDIS_URL` | `redis://localhost:6379` | Redis connection URL for ride service |
+
+### Commands run
+| Command | Outcome |
+|---|---|
+| `pnpm install` | No new packages downloaded (ioredis already in workspace) |
+| `pnpm --filter "@wasal-t/ride" type-check` | Clean — zero errors |

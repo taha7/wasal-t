@@ -234,6 +234,9 @@ importers:
       '@wasal-t/kafka':
         specifier: workspace:*
         version: link:../../packages/shared/kafka
+      '@wasal-t/redis':
+        specifier: workspace:*
+        version: link:../../packages/shared/redis
       express:
         specifier: ^4.21.0
         version: 4.22.1
