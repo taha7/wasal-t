@@ -231,6 +231,9 @@ importers:
       '@wasal-t/db':
         specifier: workspace:*
         version: link:../../packages/shared/db
+      '@wasal-t/kafka':
+        specifier: workspace:*
+        version: link:../../packages/shared/kafka
       express:
         specifier: ^4.21.0
         version: 4.22.1

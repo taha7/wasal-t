@@ -13,6 +13,7 @@
   "dependencies": {
     "@wasal-t/auth": "workspace:*",
     "@wasal-t/db": "workspace:*",
+    "@wasal-t/kafka": "workspace:*",
     "express": "^4.21.0"
   },
   "devDependencies": {

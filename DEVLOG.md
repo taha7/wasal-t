@@ -387,3 +387,44 @@ Single HTTP entry point for all clients. Handles authentication (register/login)
 |---|---|
 | `pnpm install` | No new packages downloaded (deps already in workspace) |
 | `pnpm --filter "@wasal-t/ride" type-check` | Clean — zero errors |
+
+## Phase 5 — Task 2: POST /rides/:rideId (confirm ride) — 2026-05-07
+
+### Technologies / Decisions
+- **Kafka producer singleton** (`kafka.ts`) — lazy-initialised once on first request; avoids connecting before Kafka is ready at startup
+- **`db.select().from(rides).where(eq(...))` pattern** — used instead of the relational `db.query.rides.findFirst` API to avoid a dual-drizzle-orm-instance type error (two resolution paths produce incompatible `SQL<unknown>` private property declarations)
+
+### Files created
+| File | Purpose |
+|---|---|
+| `services/ride/src/kafka.ts` | Kafka singleton: reads `KAFKA_BROKERS` env var, exposes `getProducer()` |
+| `services/ride/src/routes/rides.ts` | `POST /rides/:rideId` handler |
+
+### Files modified
+| File | Change |
+|---|---|
+| `services/ride/package.json` | Added `@wasal-t/kafka: workspace:*` dependency |
+| `services/ride/src/app.ts` | Imported and mounted `ridesRouter` at `/rides` |
+
+### Packages installed
+| Package | Version |
+|---|---|
+| `@wasal-t/kafka` | `workspace:*` (already resolved; no new download) |
+
+### Functions / features implemented
+| Symbol | File | Description |
+|---|---|---|
+| `getProducer()` | `src/kafka.ts` | Lazy singleton — connects producer on first call, returns cached thereafter |
+| `POST /rides/:rideId` handler | `src/routes/rides.ts` | Validates `x-user-id`/`x-user-role` headers; fetches ride; checks status=`draft` and ownership; UPDATEs status to `pending`; publishes `{ rideId, origin, destination }` to Kafka topic `ride-requests`; returns 202 |
+
+### Config values
+| Variable | Default | Notes |
+|---|---|---|
+| `KAFKA_BROKERS` | `localhost:9092` | Comma-separated broker list for ride service Kafka producer |
+
+### Commands run
+| Command | Outcome |
+|---|---|
+| `pnpm install` | Already up to date — no new downloads |
+| `pnpm --filter "@wasal-t/ride" type-check` | Clean — zero errors |
+| `pnpm --filter "@wasal-t/ride" build` | Clean — `dist/` updated |
