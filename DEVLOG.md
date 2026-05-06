@@ -258,3 +258,82 @@ tools/
 | `pnpm --filter "@wasal-t/db" generate` | Generated `migrations/0000_confused_wendell_rand.sql` — 4 tables, 2 enums, 3 FKs |
 | `pnpm --filter "@wasal-t/db" migrate` | Applied migration to postgres — ✓ |
 | `pnpm --filter "@wasal-t/db" seed` | Inserted 4 users (2 riders, 2 drivers) — verified via psql |
+
+---
+
+## Phase 4 — Auth & API Gateway
+**Date:** 2026-05-06
+
+### Service: `services/gateway` — `@wasal-t/gateway`
+
+#### Goal
+Single HTTP entry point for all clients. Handles authentication (register/login), verifies JWTs, and reverse-proxies all other requests to downstream microservices.
+
+#### Ports
+| Service | Port |
+|---|---|
+| Gateway | 3000 |
+| Ride service | 3001 |
+| Location service | 3002 |
+| Notification service | 3004 |
+
+#### Dependencies added to `services/gateway/package.json`
+| Package | Resolved | Purpose |
+|---|---|---|
+| `express` | `4.22.1` | HTTP server & router |
+| `http-proxy-middleware` | `3.0.5` | Reverse proxy to downstream services |
+| `@wasal-t/auth` | `workspace:*` | JWT sign/verify, password hashing |
+| `@wasal-t/db` | `workspace:*` | Drizzle db access for auth routes |
+| `@types/express` | `4.17.25` | TypeScript types for Express |
+| `@types/node` | `^22` | TypeScript types for Node.js globals |
+
+#### Files created
+
+- **`services/gateway/src/types/express.d.ts`** — Augments `Express.Request` with `user?: JwtPayload` via `declare global { namespace Express }` pattern. Uses `export {}` to mark as a module so the `declare global` block is valid.
+
+- **`services/gateway/src/middleware/authenticate.ts`** — `authenticate(req, res, next)` middleware: extracts `Bearer` token from `Authorization` header, verifies with `verifyJwt`, attaches decoded payload to `req.user`. Returns 401 on missing/invalid token.
+
+- **`services/gateway/src/middleware/requireRole.ts`** — `requireRole(role)` factory: returns an Express middleware that checks `req.user.role === role`. Returns 403 if mismatched.
+
+- **`services/gateway/src/routes/auth.ts`** — Express `IRouter` with three routes:
+  - `POST /auth/register/rider` — validates `{ email, password, displayName }`; inserts `users` (role=rider) + `riders` in a Drizzle transaction; returns JWT; 409 on duplicate email
+  - `POST /auth/register/driver` — validates `{ email, password, licenseNumber, vehicleMake, vehiclePlate }`; inserts `users` (role=driver) + `drivers` in a Drizzle transaction; returns JWT; 409 on duplicate email
+  - `POST /auth/login` — looks up user by email, compares bcrypt password, returns JWT; always returns 401 for both "not found" and "wrong password" (no user enumeration)
+  - Split from single `/auth/register` so rider-web and driver-web each own a clean, independent contract; makes future per-role additions (email verification, onboarding steps) non-branching
+
+- **`services/gateway/src/app.ts`** — Express `Application`. Sets up:
+  - `express.json()` body parser
+  - `GET /health` — unauthenticated liveness check
+  - `POST /auth/*` → `authRouter` (unprotected)
+  - `* /rides/*` → `authenticate` → reverse proxy to `RIDE_SERVICE_URL`
+  - `* /location/*` → `authenticate` → reverse proxy to `LOCATION_SERVICE_URL`
+  - `* /notifications/*` → `authenticate` → reverse proxy to `NOTIFICATION_SERVICE_URL`
+  - Proxy uses `http-proxy-middleware` with `changeOrigin: true` and an `on.proxyReq` hook that forwards `X-User-Id` and `X-User-Role` headers to downstream services (so they don't need to re-verify JWTs)
+
+- **`services/gateway/src/index.ts`** — Entry point; reads `PORT` env var (default 3000), calls `app.listen`.
+
+- **`services/gateway/.env.example`** — Documents all required env vars: `PORT`, `DATABASE_URL`, `JWT_SECRET`, `RIDE_SERVICE_URL`, `LOCATION_SERVICE_URL`, `NOTIFICATION_SERVICE_URL`.
+
+#### Files modified
+
+- **`services/gateway/package.json`** — Added `start` script (`node dist/index.js`); added dependencies and devDependencies listed above.
+
+#### Config values
+| Env var | Default | Purpose |
+|---|---|---|
+| `PORT` | `3000` | Gateway listen port |
+| `DATABASE_URL` | `postgresql://wasal:wasal@localhost:5432/wasalt` | Postgres connection |
+| `JWT_SECRET` | `dev-secret` | JWT signing/verification secret |
+| `RIDE_SERVICE_URL` | `http://localhost:3001` | Ride service upstream |
+| `LOCATION_SERVICE_URL` | `http://localhost:3002` | Location service upstream |
+| `NOTIFICATION_SERVICE_URL` | `http://localhost:3004` | Notification service upstream |
+
+#### Fix applied
+- `TS2742: The inferred type of 'app'/'router' cannot be named without a reference to .pnpm/...` — fixed by adding explicit type annotations: `const app: Application = express()` and `const router: IRouter = Router()`.
+
+#### Commands run & outcomes
+| Command | Outcome |
+|---|---|
+| `pnpm install` | +91 packages (express, http-proxy-middleware, types) |
+| `pnpm --filter "@wasal-t/gateway" type-check` | Clean — zero errors |
+| `pnpm --filter "@wasal-t/gateway" build` | Clean — `dist/` generated with all files |

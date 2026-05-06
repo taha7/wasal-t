@@ -6,11 +6,19 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
     "lint": "eslint src",
     "type-check": "tsc --noEmit"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@wasal-t/auth": "workspace:*",
+    "@wasal-t/db": "workspace:*",
+    "express": "^4.21.0",
+    "http-proxy-middleware": "^3.0.0"
+  },
   "devDependencies": {
+    "@types/express": "^4.17.0",
+    "@types/node": "^22",
     "tsx": "^4.0.0",
     "typescript": "^5.5.0"
   }
