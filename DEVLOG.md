@@ -70,3 +70,117 @@ tools/
 - `make reset-db` → `docker compose down -v && docker compose up -d postgres`
 - `make install` → `pnpm install`
 - `make build` → `pnpm build`
+
+---
+
+## Phase 2 — Shared Packages
+**Date:** 2026-05-06
+
+### Workspace config change
+- Added `"packages/shared/*"` glob to `pnpm-workspace.yaml` so each sub-package under `packages/shared/` is its own workspace member (the existing `packages/*` glob only covers one level deep)
+
+### Turborepo pipeline change
+- Verified `turbo.json` already had `"type-check": { "dependsOn": ["^build"] }` — this ensures downstream packages build their declaration files before dependents type-check against them
+
+### Packages created
+
+#### `packages/shared/types` — `@wasal-t/types`
+- No runtime dependencies
+- **Files created:**
+  - `packages/shared/types/package.json` — name `@wasal-t/types`, exports `./dist/index.js` + `./dist/index.d.ts`
+  - `packages/shared/types/tsconfig.json` — extends `../../../tsconfig.json`, rootDir `src`, outDir `dist`
+  - `packages/shared/types/src/index.ts`
+- **Types exported:**
+  - `Role` — `'rider' | 'driver'`
+  - `RideStatus` — `'draft' | 'pending' | 'matched' | 'cancelled' | 'completed' | 'failed'`
+  - `RideEventType` — `'matched' | 'cancelled' | 'no_drivers' | 'failed'`
+  - `User` — id, email, passwordHash, role, createdAt
+  - `Rider` — userId, displayName, defaultPaymentMethod
+  - `Driver` — userId, licenseNumber, vehicleMake, vehiclePlate
+  - `Ride` — id, riderId, driverId, originLat, originLon, destLat, destLon, fare, status, createdAt, updatedAt
+  - `Fare` — rideId, amount, currency
+  - `OfferEvent` — rideId, riderId, origin/dest lat-lon, fare
+  - `RideEvent` — rideId, type, optional driverId
+
+#### `packages/shared/auth` — `@wasal-t/auth`
+- Dependencies: `@wasal-t/types@workspace:*`, `jsonwebtoken@^9.0.0`
+- Dev dependencies: `@types/jsonwebtoken@^9.0.0`
+- **Files created:**
+  - `packages/shared/auth/package.json`
+  - `packages/shared/auth/tsconfig.json`
+  - `packages/shared/auth/src/index.ts`
+- **Functions exported:**
+  - `signJwt(payload, secret, options?)` — wraps `jwt.sign`; default `expiresIn: '7d'`; accepts `SignOptions` to avoid `ms.StringValue` branded-type friction
+  - `verifyJwt(token, secret)` → `JwtPayload` — wraps `jwt.verify`; throws on string payload
+- **Types exported:** `JwtPayload` (`{ userId, role }`), re-exports `Role`
+- **Fix applied:** used `SignOptions` parameter instead of bare `string` for `expiresIn` to satisfy `ms.StringValue` template-literal type in `@types/jsonwebtoken@9`
+
+#### `packages/shared/db` — `@wasal-t/db`
+- **ORM choice: Drizzle ORM** — TypeScript-native schema (no codegen step), lightweight, works cleanly in monorepo. Schema itself deferred to Phase 3.
+- Dependencies: `drizzle-orm@^0.36.0`, `pg@^8.13.0`
+- Dev dependencies: `@types/pg@^8.11.0`, `@types/node@^22`, `drizzle-kit@^0.28.0`
+- **Files created:**
+  - `packages/shared/db/package.json`
+  - `packages/shared/db/tsconfig.json`
+  - `packages/shared/db/src/index.ts`
+- **Functions/types exported:**
+  - `createPool(connectionString)` → `Pool` — creates a `pg.Pool`
+  - `createDb(pool)` → `NodePgDatabase` — wraps pool in Drizzle
+  - Re-exports `sql`, `eq`, `and`, `or`, `desc`, `asc` from `drizzle-orm` for convenience
+
+#### `packages/shared/redis` — `@wasal-t/redis`
+- Dependencies: `ioredis@^5.4.0`
+- **Files created:**
+  - `packages/shared/redis/package.json`
+  - `packages/shared/redis/tsconfig.json`
+  - `packages/shared/redis/src/index.ts`
+- **Functions exported:**
+  - `createRedisClient(url)` → `Redis`
+  - `publish(redis, channel, payload)` — JSON-serialises payload and publishes to a Redis Pub/Sub channel
+  - `acquireLock(redis, key, value, ttlSeconds)` → `boolean` — `SET key value EX ttl NX`; returns `true` if lock acquired
+  - `releaseLock(redis, key)` — `DEL key`
+  - `geoAdd(redis, key, lon, lat, member)` — `GEOADD`
+  - `geoSearch(redis, key, lon, lat, radiusKm, limit)` → `string[]` — `GEOSEARCH FROMLONLAT BYRADIUS ASC COUNT` via `redis.call`
+- **Fix applied:** ioredis 5 requires `EX ttl NX` argument order (not `NX EX ttl`)
+
+#### `packages/shared/kafka` — `@wasal-t/kafka`
+- Dependencies: `kafkajs@^2.2.0`
+- **Files created:**
+  - `packages/shared/kafka/package.json`
+  - `packages/shared/kafka/tsconfig.json`
+  - `packages/shared/kafka/src/index.ts`
+- **Functions exported:**
+  - `createKafka(config)` → `Kafka`
+  - `createProducer(kafka)` → `Producer` — connects before returning
+  - `createConsumer(kafka, groupId)` → `Consumer` — connects before returning
+  - `sendMessage(producer, topic, payload)` — JSON-serialises payload and sends single message
+- **Types exported:** `Producer`, `Consumer`, `EachMessagePayload`
+
+#### `packages/shared/sse` — `@wasal-t/sse`
+- No runtime dependencies (uses Node.js built-ins only)
+- Dev dependencies: `@types/node@^22`
+- **Files created:**
+  - `packages/shared/sse/package.json`
+  - `packages/shared/sse/tsconfig.json`
+  - `packages/shared/sse/src/index.ts`
+- **Functions exported:**
+  - `initSse(res)` — writes `200` with `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `Connection: keep-alive`, `X-Accel-Buffering: no` headers; sends opening newline
+  - `sendSseEvent(res, event, data)` — writes `event: …\ndata: …\n\n`
+  - `startHeartbeat(res, intervalMs?)` → `NodeJS.Timeout` — sends `: heartbeat\n\n` every 20 s (configurable)
+
+### Packages installed (resolved versions)
+| Package | Resolved |
+|---|---|
+| `jsonwebtoken` | `9.0.3` |
+| `@types/jsonwebtoken` | `9.0.10` |
+| `drizzle-orm` | `0.36.4` |
+| `drizzle-kit` | `0.28.1` |
+| `pg` | `8.20.0` |
+| `@types/pg` | `8.20.0` |
+| `ioredis` | `5.10.1` |
+| `kafkajs` | `2.2.4` |
+
+### Verification
+- `pnpm install` — resolved 53 new packages, no errors
+- All 6 packages: `tsc` (build) and `tsc --noEmit` (type-check) — clean, zero errors
+- `dist/` output confirmed in all 6 packages after build
