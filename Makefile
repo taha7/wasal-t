@@ -21,3 +21,9 @@ install:
 
 build:
 	pnpm build
+
+migrate:
+	pnpm --filter "@wasal-t/db" migrate
+
+seed:
+	pnpm --filter "@wasal-t/db" seed

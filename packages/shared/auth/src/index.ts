@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import type { SignOptions } from 'jsonwebtoken';
 import type { Role } from '@wasal-t/types';
@@ -23,4 +24,14 @@ export function verifyJwt(token: string, secret: string): JwtPayload {
     throw new Error('Unexpected string JWT payload');
   }
   return decoded as JwtPayload;
+}
+
+const SALT_ROUNDS = 12;
+
+export async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, SALT_ROUNDS);
+}
+
+export async function comparePassword(password: string, hash: string): Promise<boolean> {
+  return bcrypt.compare(password, hash);
 }

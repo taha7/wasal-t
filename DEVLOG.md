@@ -184,3 +184,77 @@ tools/
 - `pnpm install` — resolved 53 new packages, no errors
 - All 6 packages: `tsc` (build) and `tsc --noEmit` (type-check) — clean, zero errors
 - `dist/` output confirmed in all 6 packages after build
+
+---
+
+## Phase 3 — Database Schema & Migrations
+**Date:** 2026-05-06
+
+### ORM / migration tool
+- **Drizzle ORM + Drizzle Kit** — already chosen in Phase 2; Drizzle Kit 0.28 reads `drizzle.config.ts` natively (no extra bundler step)
+
+### `@wasal-t/auth` additions
+- Added `bcryptjs@^2.4.3` as a runtime dependency
+- Added `@types/bcryptjs@^2.4.6` as a dev dependency
+- **Files modified:**
+  - `packages/shared/auth/package.json`
+  - `packages/shared/auth/src/index.ts`
+- **Functions added:**
+  - `hashPassword(password)` → `Promise<string>` — bcrypt hash with 12 salt rounds
+  - `comparePassword(password, hash)` → `Promise<boolean>` — bcrypt compare
+
+### `@wasal-t/db` additions
+
+#### Schema
+- **File created:** `packages/shared/db/src/schema.ts`
+- **Enums:**
+  - `roleEnum` (`role`) — `'rider' | 'driver'`
+  - `rideStatusEnum` (`ride_status`) — `'draft' | 'pending' | 'matched' | 'cancelled' | 'completed' | 'failed'`
+- **Tables:**
+  - `users` — `id uuid PK defaultRandom`, `email varchar(255) unique`, `password_hash text`, `role roleEnum`, `created_at timestamp defaultNow`
+  - `riders` — `user_id uuid PK FK→users(id) cascade`, `display_name varchar(255)`, `default_payment_method varchar(100) nullable`
+  - `drivers` — `user_id uuid PK FK→users(id) cascade`, `license_number varchar(100)`, `vehicle_make varchar(100)`, `vehicle_plate varchar(20) unique`
+  - `rides` — `id uuid PK defaultRandom`, `rider_id uuid FK→users`, `driver_id uuid nullable FK→users`, `origin_lat float8`, `origin_lon float8`, `dest_lat float8`, `dest_lon float8`, `fare float8`, `status rideStatusEnum default 'draft'`, `created_at timestamp`, `updated_at timestamp .$onUpdate()`
+- **Note:** `fare` uses `doublePrecision` (float8) to keep TypeScript type as `number`; `updated_at` uses Drizzle's `.$onUpdate(() => new Date())` for auto-update on `db.update()` calls
+
+#### DB index update
+- **File modified:** `packages/shared/db/src/index.ts`
+- `createDb(pool)` now passes `{ schema }` to Drizzle → returns `AppDb` (`NodePgDatabase<typeof schema>`) for full relational query type safety
+- Exports `* from './schema.js'` so callers get table references without a separate import
+- Exports `AppDb` type alias
+
+#### Drizzle Kit config
+- **File created:** `packages/shared/db/drizzle.config.ts`
+- `schema: './src/schema.ts'`, `out: './migrations'`, `dialect: 'postgresql'`
+- `dbCredentials.url` reads `DATABASE_URL` env var; falls back to `postgresql://wasal:wasal@localhost:5432/wasalt`
+
+#### Seed script
+- **File created:** `packages/shared/db/scripts/seed.ts`
+- Placed in `scripts/` (not `src/`) — excluded from `tsc` build, run directly via `tsx`
+- Inserts 4 dev users: `alice@example.com`, `bob@example.com` (riders), `charlie@example.com`, `diana@example.com` (drivers); all with password `password123` (bcrypt-hashed)
+- Guards against `noUncheckedIndexedAccess` by checking returned rows before use
+
+#### Package.json changes
+- **File modified:** `packages/shared/db/package.json`
+- Added devDependencies: `bcryptjs@^2.4.3`, `@types/bcryptjs@^2.4.6`, `tsx@^4.0.0`
+- Added scripts: `generate` (`drizzle-kit generate`), `migrate` (`drizzle-kit migrate`), `seed` (`tsx scripts/seed.ts`)
+
+### Makefile additions
+- `make migrate` → `pnpm --filter "@wasal-t/db" migrate`
+- `make seed` → `pnpm --filter "@wasal-t/db" seed`
+
+### Packages installed (resolved versions)
+| Package | Resolved |
+|---|---|
+| `bcryptjs` | `2.4.3` |
+| `@types/bcryptjs` | `2.4.6` |
+
+### Commands run & outcomes
+| Command | Outcome |
+|---|---|
+| `pnpm install` | +2 packages (bcryptjs, @types/bcryptjs) |
+| `pnpm --filter "@wasal-t/auth" build` | Clean — dist generated |
+| `pnpm --filter "@wasal-t/db" type-check` | Clean — zero errors |
+| `pnpm --filter "@wasal-t/db" generate` | Generated `migrations/0000_confused_wendell_rand.sql` — 4 tables, 2 enums, 3 FKs |
+| `pnpm --filter "@wasal-t/db" migrate` | Applied migration to postgres — ✓ |
+| `pnpm --filter "@wasal-t/db" seed` | Inserted 4 users (2 riders, 2 drivers) — verified via psql |
