@@ -197,7 +197,20 @@ importers:
         version: 5.9.3
 
   services/location:
+    dependencies:
+      '@wasal-t/redis':
+        specifier: workspace:*
+        version: link:../../packages/shared/redis
+      express:
+        specifier: ^4.21.0
+        version: 4.22.1
     devDependencies:
+      '@types/express':
+        specifier: ^4.17.0
+        version: 4.17.25
+      '@types/node':
+        specifier: ^22
+        version: 22.19.17
       tsx:
         specifier: ^4.0.0
         version: 4.21.0

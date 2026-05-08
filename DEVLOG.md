@@ -494,3 +494,57 @@ Single HTTP entry point for all clients. Handles authentication (register/login)
 | Command | Outcome |
 |---|---|
 | `pnpm --filter "@wasal-t/ride" type-check` | Clean — zero errors |
+
+---
+
+## Phase 6 — Location Service — 2026-05-07
+
+### Technologies / Decisions
+- **Express** — same server framework as all other services
+- **@wasal-t/redis** — reuses shared workspace package for `geoAdd`, `geoSearch`, and raw ioredis client; no new packages installed
+- **Two-key TTL pattern** — `GEOADD drivers:available` + `SET driver:alive:<id> 1 EX 10` in parallel; alive key acts as a heartbeat with 10s TTL so stale geo entries are detectable without scanning timestamps
+- **GEOSEARCH via `redis.call`** — the shared `geoSearch` helper already uses `GEOSEARCH FROMLONLAT BYRADIUS ASC COUNT`; location service calls it then filters by alive-key existence
+- **Cleanup job** — `setInterval` every 60s; runs `ZRANGE` on `drivers:available`, checks alive keys in bulk, `ZREM`s stale members; started in `index.ts` after `app.listen` resolves
+- **Internal-only `GET /nearby-drivers`** — no auth check since this endpoint is called directly by Matching Service (phase 7) over the internal network, not via the gateway
+- **PORT 3002** — matches gateway default `LOCATION_SERVICE_URL = 'http://localhost:3002'`
+
+### Files created
+| File | Purpose |
+|---|---|
+| `services/location/src/redis.ts` | Redis singleton: reads `REDIS_URL` env var, exposes `getRedis()` |
+| `services/location/src/routes/location.ts` | `POST /drivers/location` and `GET /nearby-drivers` handlers |
+| `services/location/src/cleanup.ts` | `startCleanup()` — 60s interval sweep to ZREM stale geo members |
+| `services/location/src/app.ts` | Express app: mounts `locationRouter` and `/health` |
+
+### Files modified
+| File | Change |
+|---|---|
+| `services/location/src/index.ts` | Replaced TODO stub with actual server startup + `startCleanup()` call |
+| `services/location/package.json` | Added `@wasal-t/redis: workspace:*`, `express`, `@types/express`, `@types/node` dependencies; added `start` script |
+
+### Packages installed
+| Package | Version |
+|---|---|
+| `@wasal-t/redis` | `workspace:*` (ioredis already resolved in workspace, no new download) |
+| `express` | `^4.21.0` (already in workspace, no new download) |
+
+### Functions / features implemented
+| Symbol | File | Description |
+|---|---|---|
+| `getRedis()` | `src/redis.ts` | Lazy singleton — creates ioredis client on first call, returns cached thereafter |
+| `POST /drivers/location` | `src/routes/location.ts` | Validates `x-user-role: driver` header; rejects non-numbers for lat/lon; runs `geoAdd(drivers:available)` + `SET driver:alive:<driverId> 1 EX 10` in parallel; returns 204 |
+| `GET /nearby-drivers` | `src/routes/location.ts` | Parses `lat`, `lon`, `radiusKm` (default 5), `limit` (default 10) query params; runs `geoSearch`; filters candidates by `EXISTS driver:alive:<id>`; returns `{ drivers: string[] }` |
+| `startCleanup()` | `src/cleanup.ts` | Sets a 60s interval; fetches all geo members via `ZRANGE`; bulk-checks alive keys; `ZREM`s members with no alive key |
+
+### Config values
+| Variable | Default | Notes |
+|---|---|---|
+| `REDIS_URL` | `redis://localhost:6379` | Redis connection URL |
+| `PORT` | `3002` | HTTP listen port; matches gateway `LOCATION_SERVICE_URL` default |
+
+### Commands run
+| Command | Outcome |
+|---|---|
+| `pnpm install` | Already up to date — no new downloads |
+| `pnpm --filter "@wasal-t/location" type-check` | Clean — zero errors |
+| `pnpm --filter "@wasal-t/location" build` | Clean — `dist/` generated |
